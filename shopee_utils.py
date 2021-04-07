@@ -1,4 +1,5 @@
 from fastai.vision.all import *
+from tqdm.notebook import tqdm
 import PIL
 PATH = Path('/home/slex/data/shopee')
 
@@ -59,3 +60,34 @@ def add_target_groups(data_df):
     target_groups = data_df.groupby('label_group').indices
     data_df['target']=data_df.label_group.map(target_groups)
     return data_df
+
+def hash_label(x):
+    x = (13*x)%10000
+    return x // 2000
+
+def add_splits(data_df):
+    data_df['split'] = data_df.label_group.apply(hash_label)
+    data_df['is_valid'] = data_df.split == 0
+    return data_df
+
+def do_chunk(embs):
+    step = 10000
+    for chunk_start in range(0, embs.shape[0], step):
+        chunk_end = min(chunk_start+step, len(embs))
+        yield embs[chunk_start:chunk_end]
+
+def embs_from_model(model, dl):
+    all_embs = []
+    all_ys=[]
+    for batch in tqdm(dl):
+        if len(batch) ==2:
+            bx,by=batch
+        else:
+            bx,=batch
+            by=torch.zeros(1)
+        with torch.no_grad():
+            embs = model(bx)
+            all_embs.append(embs.half())
+        all_ys.append(by)
+    all_embs = F.normalize(torch.cat(all_embs))
+    return all_embs, torch.cat(all_ys)
