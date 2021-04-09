@@ -17,7 +17,7 @@ def show(data):
 def f1(tp, fp, num_tar):
     return 2 * tp / (tp+fp+num_tar)
 
-def build_from_pairs(pairs, target):
+def build_from_pairs(pairs, target, display = True):
     score =0
     tp = [0]*len(target)
     fp = [0]*len(target)
@@ -30,9 +30,10 @@ def build_from_pairs(pairs, target):
         else: fp[x] +=1
         score += f1(tp[x], fp[x], group_size) 
         scores.append(score / len(target))
-    plt.plot(scores)
-    am =torch.tensor(scores).argmax()
-    print(f'{scores[am]:.3f} at {am/len(target)} pairs')
+    if display:
+        plt.plot(scores)
+        am =torch.tensor(scores).argmax()
+        print(f'{scores[am]:.3f} at {am/len(target)} pairs')
     return scores
 
 
@@ -91,3 +92,4 @@ def embs_from_model(model, dl):
         all_ys.append(by)
     all_embs = F.normalize(torch.cat(all_embs))
     return all_embs, torch.cat(all_ys)
+
