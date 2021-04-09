@@ -93,3 +93,10 @@ def embs_from_model(model, dl):
     all_embs = F.normalize(torch.cat(all_embs))
     return all_embs, torch.cat(all_ys)
 
+def f1_from_embs(embs, ys, display=False):
+    target_matrix = ys[:,None]==ys[None,:]
+    groups = [torch.where(t)[0].tolist() for t in target_matrix]
+    dists, inds = get_nearest(embs, do_chunk(embs))
+    pairs = sorted_pairs(dists, inds)[:len(embs)*10]
+    scores =build_from_pairs(pairs, groups, display)
+    return max(scores)
