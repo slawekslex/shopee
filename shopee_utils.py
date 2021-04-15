@@ -22,6 +22,7 @@ def build_from_pairs(pairs, target, display = True):
     tp = [0]*len(target)
     fp = [0]*len(target)
     scores=[]
+    vs=[]
     group_sizes = [len(x) for x in target]
     for x, y, v in pairs:
         group_size = group_sizes[x]
@@ -30,10 +31,11 @@ def build_from_pairs(pairs, target, display = True):
         else: fp[x] +=1
         score += f1(tp[x], fp[x], group_size) 
         scores.append(score / len(target))
+        vs.append(v)
     if display:
         plt.plot(scores)
         am =torch.tensor(scores).argmax()
-        print(f'{scores[am]:.3f} at {am/len(target)} pairs')
+        print(f'{scores[am]:.3f} at {am/len(target)} pairs or {vs[am]:.3f} threshold')
     return scores
 
 
@@ -57,9 +59,9 @@ def get_nearest(embs, emb_chunks):
         indices.append(top_inds.T)
     return torch.cat(distances), torch.cat(indices)
 
-def add_target_groups(data_df):
-    target_groups = data_df.groupby('label_group').indices
-    data_df['target']=data_df.label_group.map(target_groups)
+def add_target_groups(data_df, source_column='label_group', target_column='target'):
+    target_groups = data_df.groupby(source_column).indices
+    data_df[target_column]=data_df[source_column].map(target_groups)
     return data_df
 
 def hash_label(x):
