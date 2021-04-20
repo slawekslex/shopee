@@ -39,25 +39,49 @@ def build_from_pairs(pairs, target, display = True):
     return scores
 
 
+# def sorted_pairs(distances, indices):
+#     triplets = []
+#     n, m = distances.shape
+#     for x in range(n):
+#         tri = zip([x] * m, indices[x].tolist(), distances[x].tolist())
+#         triplets += list(tri)
+    
+#     return sorted(triplets, key=lambda x: -x[2])
+
 def sorted_pairs(distances, indices):
     triplets = []
     n, m = distances.shape
     for x in range(n):
-        tri = zip([x] * m, indices[x].tolist(), distances[x].tolist())
-        triplets += list(tri)
-    
+        used=set()
+        for ind, dist in zip(indices[x].tolist(), distances[x].tolist()):
+            if not ind in used:
+                triplets.append((x, ind, dist))
+                used.add(ind)
     return sorted(triplets, key=lambda x: -x[2])
 
-def get_nearest(embs, emb_chunks):
-    K = min(50, len(embs))
+def get_nearest(embs, emb_chunks, K=None, sorted=True):
+    if K is None:
+        K = min(50, len(embs))
     distances = []
     indices = []
     for chunk in emb_chunks:
         sim = embs @ chunk.T
-        top_vals, top_inds = sim.topk(K, dim=0)
+        top_vals, top_inds = sim.topk(K, dim=0, sorted=sorted)
         distances.append(top_vals.T)
         indices.append(top_inds.T)
     return torch.cat(distances), torch.cat(indices)
+
+def get_dist_for_inds(embs, inds):
+    step=1000
+    dists = []
+    for chunk_start in range(0, len(inds), step):
+        chunk_end = min(chunk_start+step, len(inds))
+        A = embs[chunk_start: chunk_end,:, None]
+        B = embs[inds[chunk_start:chunk_end]]
+        D = torch.matmul(B,A)
+        dists.append(D.squeeze())
+    dists = torch.cat(dists)
+    return dists
 
 def add_target_groups(data_df, source_column='label_group', target_column='target'):
     target_groups = data_df.groupby(source_column).indices
@@ -102,3 +126,41 @@ def f1_from_embs(embs, ys, display=False):
     pairs = sorted_pairs(dists, inds)[:len(embs)*10]
     scores =build_from_pairs(pairs, groups, display)
     return max(scores)
+
+
+from scipy.optimize import curve_fit
+def objective(x, a, b, c):
+	return a * np.exp(-b * x) + c
+
+def do_scale(x,min_val,a,b,c):
+    scaled = a*torch.exp(-b*x)+c
+    return ((x>=min_val) * scaled).clamp(0,1)
+
+def scale_sims(sims, target_matrix):
+    scores, indices = sims.view(-1).topk(10*len(sims))
+    width =1000
+    target_flat = target_matrix.view(-1)
+    probs,mean_sims=[],[]
+    for bucket_start in range(0, len(scores), width):
+        bucket_end = min(bucket_start+width, len(scores))
+        bucket_inds = indices[bucket_start:bucket_end]
+        targets = target_flat[bucket_inds]
+        bucket_prob = targets.sum()/targets.numel()
+        mean_sim = scores[bucket_start:bucket_end].mean()
+        mean_sims.append(mean_sim.item())
+        probs.append(bucket_prob.item())
+    x, y= mean_sims, probs
+    popt, _ = curve_fit(objective, x, y)
+
+    # plot input vs output
+    plt.scatter(x, y)
+    # define a sequence of inputs between the smallest and largest known inputs
+    x_line = np.arange(min(x), 1, 0.01)
+    # calculate the output for the range
+    y_line = objective(x_line, *popt)
+    # create a line plot for the mapping function
+    plt.plot(x_line, y_line, '--', color='red')
+    plt.show()
+    params = {'min_val':min(x), 'a':popt[0], 'b':popt[1], 'c':popt[2]}
+    print(params)
+    return functools.partial(do_scale,**params)
