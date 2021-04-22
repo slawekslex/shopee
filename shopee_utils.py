@@ -1,6 +1,8 @@
 from fastai.vision.all import *
 from tqdm.notebook import tqdm
 import PIL
+from sklearn.model_selection import StratifiedKFold
+
 PATH = Path('/home/slex/data/shopee')
 
 def show(data):
@@ -16,6 +18,13 @@ def show(data):
 
 def f1(tp, fp, num_tar):
     return 2 * tp / (tp+fp+num_tar)
+
+def score_group(group, target):
+    tp = len(set(group).intersection(set(target)))
+    return 2 * tp / (len(group)+len(target))
+def score_all_groups(groups, targets):
+    scores = [score_group(groups[i], targets[i]) for i in range(len(groups))]
+    return sum(scores)/len(scores)
 
 def build_from_pairs(pairs, target, display = True):
     score =0
@@ -39,14 +48,6 @@ def build_from_pairs(pairs, target, display = True):
     return scores
 
 
-# def sorted_pairs(distances, indices):
-#     triplets = []
-#     n, m = distances.shape
-#     for x in range(n):
-#         tri = zip([x] * m, indices[x].tolist(), distances[x].tolist())
-#         triplets += list(tri)
-    
-#     return sorted(triplets, key=lambda x: -x[2])
 
 def sorted_pairs(distances, indices):
     triplets = []
@@ -88,14 +89,24 @@ def add_target_groups(data_df, source_column='label_group', target_column='targe
     data_df[target_column]=data_df[source_column].map(target_groups)
     return data_df
 
-def hash_label(x):
-    x = (13*x)%10000
-    return x // 2000
 
-def add_splits(data_df):
-    data_df['split'] = data_df.label_group.apply(hash_label)
-    data_df['is_valid'] = data_df.split == 0
-    return data_df
+
+def add_splits(train_df, valid_group=0):
+    grouped = train_df.groupby('label_group').size()
+
+    labels, sizes =grouped.index.to_list(), grouped.to_list()
+
+    skf = StratifiedKFold(5)
+    splits = list(skf.split(labels, sizes))
+
+    group_to_split =  dict()
+    for idx in range(5):
+        labs = np.array(labels)[splits[idx][1]]
+        group_to_split.update(dict(zip(labs, [idx]*len(labs))))
+
+    train_df['split'] = train_df.label_group.replace(group_to_split)
+    train_df['is_valid'] = train_df['split'] == valid_group
+    return train_df
 
 def do_chunk(embs):
     step = 10000
@@ -164,3 +175,43 @@ def scale_sims(sims, target_matrix):
     params = {'min_val':min(x), 'a':popt[0], 'b':popt[1], 'c':popt[2]}
     print(params)
     return functools.partial(do_scale,**params)
+
+
+def get_targets_shape(train_df):
+    all_targets = add_target_groups(train_df).target.to_list()
+    all_targets_lens = [len(t) for t in all_targets]
+    targets_shape = []
+    for size in range(min(all_targets_lens), max(all_targets_lens)+1):
+        count = all_targets_lens.count(size) / len(all_targets)
+        targets_shape.append((size,count))
+    return targets_shape
+
+def cut(groups, groups_p, pos, target_count):
+    probs = []
+    groups_lens = [len(g)for g in groups]
+    current_count = groups_lens.count(pos)
+    if current_count >= target_count:
+
+        return
+    to_cut = target_count - current_count
+    for i in range(len(groups)):
+        if len(groups_p[i])>pos:
+            probs.append((i, groups_p[i][pos]))
+    probs.sort(key=lambda x:x[1])
+    for i in range(min(to_cut, len(probs))):
+        group_idx = probs[i][0] 
+        groups[group_idx]=groups[group_idx][:pos]
+        groups_p[group_idx]=groups_p[group_idx][:pos]
+        
+def group_and_shave(dists, combined_inds, train_df):
+    triplets = sorted_pairs(dists, combined_inds)
+    groups = [[] for _ in range(len(dists))]
+    groups_p = [[] for _ in range(len(dists))]
+    for x,y,v in triplets:
+        if len(groups[x])>=51: continue
+        groups[x].append(y)
+        groups_p[x].append(v)
+    targets_shape = get_targets_shape(train_df)
+    for pos, size_pct in targets_shape:
+        cut(groups, groups_p, pos, int(size_pct * len(groups)))
+    return groups
