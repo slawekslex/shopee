@@ -51,7 +51,7 @@ def build_from_pairs(pairs, target, display = True):
 
 def sorted_pairs(distances, indices):
     triplets = []
-    n, m = distances.shape
+    n= len(distances)
     for x in range(n):
         used=set()
         for ind, dist in zip(indices[x].tolist(), distances[x].tolist()):
@@ -109,7 +109,7 @@ def add_splits(train_df, valid_group=0):
     return train_df
 
 def do_chunk(embs):
-    step = 10000
+    step = 1000
     for chunk_start in range(0, embs.shape[0], step):
         chunk_end = min(chunk_start+step, len(embs))
         yield embs[chunk_start:chunk_end]
@@ -215,3 +215,61 @@ def group_and_shave(dists, combined_inds, train_df):
     for pos, size_pct in targets_shape:
         cut(groups, groups_p, pos, int(size_pct * len(groups)))
     return groups
+
+def shave_and_score(D, targets, data):
+    dists, inds = D.topk(50, dim=1)
+    groups =group_and_shave(dists, inds, data)
+    print(score_all_groups(groups, targets))
+
+
+def gen_sim_and(embs1, embs2):
+    res = torch.empty((len(embs1), len(embs1)), device = embs1.device, dtype=embs1.dtype)
+    step = 500
+    for chunk_start in range(0, embs1.shape[0], step):
+        chunk_end = min(chunk_start+step, len(embs1))
+        chunk1=embs1[chunk_start: chunk_end]
+        chunk2=embs2[chunk_start: chunk_end]
+        sim1 = chunk1@embs1.T
+        sim2 = chunk2@embs2.T
+        sim = sim1+sim2 - sim1*sim2
+        res[chunk_start:chunk_end]=sim
+    return res
+
+def reciprocal_probs(D, x, tresh, scaled=False, include_x=False):
+    neighb = torch.where(D[x]>tresh)
+    if scaled:
+        probs =D[x,neighb[0]]
+        DP = probs[:,None] * D[neighb]
+    else:
+        DP = D[neighb]
+    if include_x:
+        DP = (DP.sum(dim=0) + D[x]) / (len(neighb[0])+1)
+    else:
+        DP = DP.mean(dim=0)
+    return DP
+
+def all_reciprocal(D, tresh, scaled=False, include_x=False):
+    ret = [reciprocal_probs(D,i,tresh,scaled, include_x)[None] for i in range(len(D))]
+    return torch.cat(ret)
+
+def top_reciprocal(D, thresh, scaled=False, include_x=False):
+    r_dists, r_ind=[],[]
+    K = min(50, len(D))
+    for x in range(len(D)):
+        d_x = reciprocal_probs(D, x, thresh, scaled, include_x)
+        v,i = d_x.topk(K)
+        r_dists.append(v)
+        r_ind.append(i)
+    return r_dists, r_ind
+
+def dist_to_pairs(dist):
+    res = []
+    for x in range(len(dist)):
+        vals, ys = dist[x].topk(100)
+        for v,y in zip(vals.tolist(),ys.tolist()):
+            res.append((x,y,v))
+    return sorted(res, key=lambda x: -x[2])
+
+def score_distances(dist, targets, display=False):
+    triplets = dist_to_pairs(dist)[:len(dist)*10]
+    return max(build_from_pairs(triplets, targets, display))
