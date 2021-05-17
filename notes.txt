@@ -1,0 +1,30 @@
+Learning Transferable Visual Models From Natural Language Supervision https://arxiv.org/pdf/2103.00020.pdf
+
+Deep Entity Matching with Pre-Trained Language Models https://arxiv.org/pdf/2004.00584.pdf
+
+Self-supervised Pretraining of Visual Features in the Wild https://arxiv.org/pdf/2103.01988.pdf
+
+Unsupervised Learning of Visual Features
+by Contrasting Cluster Assignments https://arxiv.org/pdf/2006.09882.pdf
+
+In Defense of the Triplet Loss for Person Re-Identification
+https://arxiv.org/pdf/1703.07737.pdf
+
+Re-ranking Person Re-identification with k-reciprocal Encoding
+https://arxiv.org/pdf/1701.08398.pdf
+
+
+TODO:
+
+
+-text augmentation https://github.com/makcedward/nlpaug
+-Concat the CLS token with the pooled embeddings in BERT
+- Transitive closure
+- DALI
+- Efficientnet
+- Triplet loss
+- Clip https://www.kaggle.com/bguberfain/openai-clip-with-train
+- OCR https://www.kaggle.com/c/shopee-product-matching/discussion/224543
+Checked:
+-PHASH: on validation only add a single TP and a single FP
+-Fusing: .867 vs .870 weaving
